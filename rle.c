@@ -2,73 +2,59 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdio.h>
 
-int comprimir_rle(char *in_buf, int in_size, char *out_buf) {
-    int i, j = 0;
-    int count = 1;
-
-    if (in_size == 0) return 0;
-
-    for (i = 0; i < in_size - 1; i++) {
-        if (in_buf[i] == in_buf[i + 1]) {
-            count++;
-        } else {
-            // Escribir conteo
-            if (count >= 100) {
-                out_buf[j++] = '0' + (count / 100);
-                out_buf[j++] = '0' + ((count / 10) % 10);
-                out_buf[j++] = '0' + (count % 10);
-            } else if (count >= 10) {
-                out_buf[j++] = '0' + (count / 10);
-                out_buf[j++] = '0' + (count % 10);
-            } else {
-                out_buf[j++] = '0' + count;
-            }
-            out_buf[j++] = in_buf[i];
-            count = 1;
-        }
-    }
-
-    // Último carácter
-    if (count >= 100) {
-        out_buf[j++] = '0' + (count / 100);
-        out_buf[j++] = '0' + ((count / 10) % 10);
-        out_buf[j++] = '0' + (count % 10);
-    } else if (count >= 10) {
-        out_buf[j++] = '0' + (count / 10);
-        out_buf[j++] = '0' + (count % 10);
-    } else {
-        out_buf[j++] = '0' + count;
-    }
-    out_buf[j++] = in_buf[i];
-
-    return j;
-}
-
-
-int descomprimir_rle(char *in_buf, int in_size, char *out_buf) {
+int comprimir_rle(const unsigned char *in_buf, int in_size, unsigned char *out_buf) {
     int i = 0, j = 0;
 
     while (i < in_size) {
-        int count = 0;
-        
-        // Leer dígitos
-        while (i < in_size && in_buf[i] >= '0' && in_buf[i] <= '9') {
-            count = count * 10 + (in_buf[i] - '0');
-            i++;
+        unsigned char current = in_buf[i];
+        int count = 1;
+
+        // Contar repeticiones
+        while (i + count < in_size && in_buf[i + count] == current && count < 255) {
+            count++;
         }
-        
-        // Leer carácter
-        if (i < in_size) {
-            char ch = in_buf[i++];
-            for (int k = 0; k < count; k++) {
-                out_buf[j++] = ch;
-            }
-        }
+
+        // Guardar (count, byte)
+        out_buf[j++] = (unsigned char)count;
+        out_buf[j++] = current;
+
+        i += count;
     }
 
+    return j; // tamaño del buffer comprimido
+}
+
+int descomprimir_rle(unsigned char *in_buf, int in_size, unsigned char *out_buf){
+    
+    if (in_size <= 0) return 0;
+
+    // Asegurar que tenemos pares de bytes (count, value)
+    if(in_size % 2 != 0){
+        in_size -= 1;
+    }
+
+    int i = 0, j = 0;
+    while(i < in_size){
+        unsigned char count = in_buf[i];      // ← unsigned char en vez de unsigned int
+        unsigned char value = in_buf[i+1];
+        
+        // Protección contra desbordamiento
+        if(j + count > 8192){
+            count = 8192 - j;
+        }
+        
+        for(int k = 0; k < count; k++){
+            out_buf[j++] = value;
+        }
+        
+        i += 2;
+    }
     return j;
 }
+
+
 
 
 int str_cmp(const char *s1, const char *s2) {
@@ -93,8 +79,8 @@ void print_error(const char *msg) {
 int procesar_archivo(const char *input_file, const char *output_file, 
                      int do_compress, int do_decompress) {
     
-    char in_buf[4096];
-    char out_buf[8192];
+    unsigned char in_buf[4096];   // ← Cambio de char a unsigned char
+    unsigned char out_buf[8192];  // ← Cambio de char a unsigned char
     
     // Abrir archivo de entrada
     int fd_in = open(input_file, O_RDONLY);
@@ -103,40 +89,31 @@ int procesar_archivo(const char *input_file, const char *output_file,
         return 1;
     }
 
-    // Leer archivo
-    ssize_t bytes_read = read(fd_in, in_buf, sizeof(in_buf));
-    close(fd_in);
-
-    if (bytes_read < 0) {
-        print_error("Error: No se pudo leer el archivo\n");
-        return 1;
-    }
-
-    int result_size = 0;
-
-    // Comprimir o descomprimir
-    if (do_compress) {
-        result_size = comprimir_rle(in_buf, bytes_read, out_buf);
-    } else if (do_decompress) {
-        result_size = descomprimir_rle(in_buf, bytes_read, out_buf);
-    } else {
-        print_error("Error: Debe especificar -c o -d\n");
-        return 1;
-    }
-
-    // Escribir resultado
+    // Abrir archivo de salida
     int fd_out = open(output_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd_out < 0) {
         print_error("Error: No se pudo crear el archivo de salida\n");
+        close(fd_in);
         return 1;
     }
 
-    write(fd_out, out_buf, result_size);
+    // Leer archivo y escribir resultado
+    ssize_t bytes_read;
+    while((bytes_read = read(fd_in, in_buf, sizeof(in_buf))) > 0) {
+        printf("Bytes leidos: %ld\n", bytes_read);
+        if (do_compress) {
+            int result_size = comprimir_rle(in_buf, bytes_read, out_buf);
+            write(fd_out, out_buf, result_size); 
+        } else if (do_decompress) {
+            int result_size = descomprimir_rle(in_buf, bytes_read, out_buf);
+            write(fd_out, out_buf, result_size); 
+        }
+    }
+    
+    close(fd_in);
     close(fd_out);
-
     return 0;
 }
-
 
 int main(int argc, char *argv[]) {
     int do_compress = 0;
