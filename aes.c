@@ -57,20 +57,20 @@ typedef struct {
     unsigned char round_keys[176]; // 11 round keys de 16 bytes cada una
 } AES_Context;
 
-// Funciones auxiliares
-void escribir_salida(const char *msg) {
+// Funciones auxiliares RENOMBRADAS
+void aes_escribir_salida(const char *msg) {
     int len = 0;
     while (msg[len] != '\0') len++;
     write(STDOUT_FILENO, msg, len);
 }
 
-int longitud_cadena(const char *str) {
+int aes_longitud_cadena(const char *str) {
     int len = 0;
     while (str[len] != '\0') len++;
     return len;
 }
 
-int comparar_cadena(const char *s1, const char *s2) {
+int aes_comparar_cadena(const char *s1, const char *s2) {
     int i = 0;
     while (s1[i] != '\0' && s2[i] != '\0') {
         if (s1[i] != s2[i]) return 0;
@@ -271,13 +271,13 @@ int cifrar_archivo_aes(const char *entrada, const char *salida, const unsigned c
     
     int fd_in = open(entrada, O_RDONLY);
     if (fd_in == -1) {
-        escribir_salida("Error: No se pudo abrir archivo de entrada\n");
+        aes_escribir_salida("Error: No se pudo abrir archivo de entrada\n");
         return -1;
     }
     
     int fd_out = open(salida, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd_out == -1) {
-        escribir_salida("Error: No se pudo crear archivo de salida\n");
+        aes_escribir_salida("Error: No se pudo crear archivo de salida\n");
         close(fd_in);
         return -1;
     }
@@ -305,7 +305,7 @@ int cifrar_archivo_aes(const char *entrada, const char *salida, const unsigned c
         aes_encrypt_block(buffer, &ctx);
         
         if (write(fd_out, buffer, AES_BLOCK_SIZE) != AES_BLOCK_SIZE) {
-            escribir_salida("Error al escribir\n");
+            aes_escribir_salida("Error al escribir\n");
             close(fd_in);
             close(fd_out);
             return -1;
@@ -324,13 +324,13 @@ int descifrar_archivo_aes(const char *entrada, const char *salida, const unsigne
     
     int fd_in = open(entrada, O_RDONLY);
     if (fd_in == -1) {
-        escribir_salida("Error: No se pudo abrir archivo de entrada\n");
+        aes_escribir_salida("Error: No se pudo abrir archivo de entrada\n");
         return -1;
     }
     
     int fd_out = open(salida, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd_out == -1) {
-        escribir_salida("Error: No se pudo crear archivo de salida\n");
+        aes_escribir_salida("Error: No se pudo crear archivo de salida\n");
         close(fd_in);
         return -1;
     }
@@ -352,7 +352,7 @@ int descifrar_archivo_aes(const char *entrada, const char *salida, const unsigne
         }
         
         if (write(fd_out, buffer, bytes_a_escribir) != bytes_a_escribir) {
-            escribir_salida("Error al escribir\n");
+            aes_escribir_salida("Error al escribir\n");
             close(fd_in);
             close(fd_out);
             return -1;
@@ -368,7 +368,7 @@ int descifrar_archivo_aes(const char *entrada, const char *salida, const unsigne
 
 // Generar clave de 16 bytes desde una cadena
 void generar_clave_aes(const char *clave_str, unsigned char *clave) {
-    int len = longitud_cadena(clave_str);
+    int len = aes_longitud_cadena(clave_str);
     
     // Simple hash para generar clave de 16 bytes
     for (int i = 0; i < AES_KEY_SIZE; i++) {
@@ -381,66 +381,16 @@ void generar_clave_aes(const char *clave_str, unsigned char *clave) {
     }
 }
 
-void mostrar_ayuda() {
-    escribir_salida("Uso: ./aes [opciones]\n\n");
-    escribir_salida("Opciones:\n");
-    escribir_salida("  -e              Encriptar archivo\n");
-    escribir_salida("  -u              Desencriptar archivo\n");
-    escribir_salida("  -i <archivo>    Archivo de entrada\n");
-    escribir_salida("  -o <archivo>    Archivo de salida\n");
-    escribir_salida("  -k <clave>      Clave secreta\n");
-    escribir_salida("  -h              Mostrar ayuda\n\n");
-    escribir_salida("Ejemplos:\n");
-    escribir_salida("  ./aes -e -i documento.pdf -o doc_cifrado.aes -k MiClave\n");
-    escribir_salida("  ./aes -u -i doc_cifrado.aes -o documento.pdf -k MiClave\n");
-}
-
-int main(int argc, char *argv[]) {
-    int operacion = 0;
-    char *archivo_entrada = 0;
-    char *archivo_salida = 0;
-    char *clave_str = 0;
-    
-    for (int i = 1; i < argc; i++) {
-        if (comparar_cadena(argv[i], "-e")) {
-            operacion = 1;
-        } else if (comparar_cadena(argv[i], "-u")) {
-            operacion = 2;
-        } else if (comparar_cadena(argv[i], "-i") && i + 1 < argc) {
-            archivo_entrada = argv[++i];
-        } else if (comparar_cadena(argv[i], "-o") && i + 1 < argc) {
-            archivo_salida = argv[++i];
-        } else if (comparar_cadena(argv[i], "-k") && i + 1 < argc) {
-            clave_str = argv[++i];
-        } else if (comparar_cadena(argv[i], "-h")) {
-            mostrar_ayuda();
-            return 0;
-        }
-    }
-    
-    if (operacion == 0 || !archivo_entrada || !archivo_salida || !clave_str) {
-        escribir_salida("Error: Faltan parametros\n\n");
-        mostrar_ayuda();
-        return 1;
-    }
-    
-    unsigned char clave[AES_KEY_SIZE];
-    generar_clave_aes(clave_str, clave);
-    
-    escribir_salida(operacion == 1 ? "Cifrando con AES-128...\n" : "Descifrando con AES-128...\n");
-    
-    int resultado;
-    if (operacion == 1) {
-        resultado = cifrar_archivo_aes(archivo_entrada, archivo_salida, clave);
-    } else {
-        resultado = descifrar_archivo_aes(archivo_entrada, archivo_salida, clave);
-    }
-    
-    if (resultado == 0) {
-        escribir_salida(operacion == 1 ? "Cifrado exitoso\n" : "Descifrado exitoso\n");
-    } else {
-        escribir_salida("Operacion fallida\n");
-    }
-    
-    return resultado;
+void aes_mostrar_ayuda() {
+    aes_escribir_salida("Uso: ./aes [opciones]\n\n");
+    aes_escribir_salida("Opciones:\n");
+    aes_escribir_salida("  -e              Encriptar archivo\n");
+    aes_escribir_salida("  -u              Desencriptar archivo\n");
+    aes_escribir_salida("  -i <archivo>    Archivo de entrada\n");
+    aes_escribir_salida("  -o <archivo>    Archivo de salida\n");
+    aes_escribir_salida("  -k <clave>      Clave secreta\n");
+    aes_escribir_salida("  -h              Mostrar ayuda\n\n");
+    aes_escribir_salida("Ejemplos:\n");
+    aes_escribir_salida("  ./aes -e -i documento.pdf -o doc_cifrado.aes -k MiClave\n");
+    aes_escribir_salida("  ./aes -u -i doc_cifrado.aes -o documento.pdf -k MiClave\n");
 }
